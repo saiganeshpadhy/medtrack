@@ -4,11 +4,15 @@
 {% block content %}
 <style>
     body {
-        background: linear-gradient(135deg, #6c63ff, #42a5f5);
+        background: linear-gradient(135deg, #001f4d, #004080); /* Navy gradient */
         min-height: 100vh;
         display: flex;
         align-items: center;
         justify-content: center;
+    }
+
+    footer {
+        display: none !important; /* Hides footer */
     }
 
     .glass-card {
@@ -20,12 +24,14 @@
 
     .role-toggle .btn {
         transition: all 0.3s ease;
+        border: 1px solid #001f4d;
+        color: #001f4d;
     }
 
     .role-toggle .btn.active {
-        background-color: #6c63ff;
-        color: white;
-        border-color: #6c63ff;
+        background-color: #ffd700; /* Yellow */
+        color: #001f4d;
+        border-color: #ffd700;
     }
 
     .form-icon {
@@ -33,7 +39,7 @@
         left: 15px;
         top: 50%;
         transform: translateY(-50%);
-        color: #6c63ff;
+        color: #ffd700; /* Yellow */
     }
 
     .form-group {
@@ -46,12 +52,33 @@
 
     .form-control:focus {
         box-shadow: none;
-        border-color: #6c63ff;
+        border-color: #ffd700; /* Yellow focus */
     }
-                    
-    
-</style>
 
+    .btn-light {
+        background-color: #ffd700;
+        color: #001f4d;
+        border: none;
+    }
+
+    .btn-light:hover {
+        background-color: #e6c200;
+    }
+
+    .text-light,
+    .text-white {
+        color: #fff !important;
+    }
+
+    .text-warning {
+        color: #ffd700 !important;
+    }
+
+    a.text-light:hover {
+        color: #ffd700 !important;
+    }
+
+</style>
 
 <div class="container">
     <div class="row justify-content-center">
