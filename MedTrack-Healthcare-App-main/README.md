@@ -152,7 +152,7 @@ Error Pages ✔️
 For production deployment, use gunicorn or uWSGI behind Nginx/Apache or deploy on platforms like AWS EC2, Heroku, etc.
 
 👨‍💻 Author
-Developed by: @SAGAR
+Developed by: @Saiganesh padhy
 
-📧 Contact: Sagar@example.com
+📧 Contact: Saiganesh@example.com
 
