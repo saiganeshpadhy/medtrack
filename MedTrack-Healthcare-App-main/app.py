@@ -1,4 +1,4 @@
-from flask import Flask, request, session, redirect, url_for, render_template, flash
+tfrom flask import Flask, request, session, redirect, url_for, render_template, flash
 import boto3
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
@@ -26,7 +26,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'temporary_secret_key')  # consist
 # ----------------------------------------
 
 # AWS Config
-AWS_REGION_NAME = os.environ.get('AWS_REGION_NAME', 'ap-south-1')
+AWS_REGION_NAME = os.environ.get('AWS_REGION_NAME', 'us-east-1')
 dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION_NAME)
 sns = boto3.client('sns', region_name=AWS_REGION_NAME)
 
