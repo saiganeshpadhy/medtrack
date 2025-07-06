@@ -85,7 +85,7 @@
                                 <span class="badge bg-warning text-dark">{{ appointment.status|capitalize }}</span>
                             </td>
                             <td>
-                                <a href="{{ url_for('appointment_view_doctor', appointment_id=appointment.appointment_id) }}" class="btn btn-primary btn-sm">View Details</a>
+                                <a href="{{ url_for('view_appointment_doctor', appointment_id=appointment.appointment_id) }}" class="btn btn-primary btn-sm">View Details</a>
                             </td>
                         </tr>
                         {% else %}
@@ -119,7 +119,7 @@
                                 <span class="badge bg-success">{{ appointment.status|capitalize }}</span>
                             </td>
                             <td>
-                                <a href="{{ url_for('appointment_view_doctor', appointment_id=appointment.appointment_id) }}" class="btn btn-primary btn-sm">View Details</a>
+                                <a href="{{ url_for('view_appointment_doctor', appointment_id=appointment.appointment_id) }}" class="btn btn-primary btn-sm">View Details</a>
                             </td>
                         </tr>
                         {% else %}
@@ -157,7 +157,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <a href="{{ url_for('appointment_view_doctor', appointment_id=appointment.appointment_id) }}" class="btn btn-primary btn-sm">View Details</a>
+                                <a href="{{ url_for('view_appointment_doctor', appointment_id=appointment.appointment_id) }}" class="btn btn-primary btn-sm">View Details</a>
                             </td>
                         </tr>
                         {% else %}
