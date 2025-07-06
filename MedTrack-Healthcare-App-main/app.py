@@ -1,4 +1,4 @@
-tfrom flask import Flask, request, session, redirect, url_for, render_template, flash
+from flask import Flask, request, session, redirect, url_for, render_template, flash
 import boto3
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
@@ -26,7 +26,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'temporary_secret_key')  # consist
 # ----------------------------------------
 
 # AWS Config
-AWS_REGION_NAME = os.environ.get('AWS_REGION_NAME', 'us-east-1')
+AWS_REGION_NAME = os.environ.get('AWS_REGION_NAME', 'ap-south-1')
 dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION_NAME)
 sns = boto3.client('sns', region_name=AWS_REGION_NAME)
 
@@ -105,16 +105,20 @@ def publish_to_sns(message, subject="HealthCare Notification"):
     except Exception as e:
         logger.error(f"Failed to publish to SNS: {e}")
 
+# index route
 @app.route('/')
 def index():
     if is_logged_in():
-        return redirect(url_for('dashboard'))
+        role = session.get('role')
+        return redirect(url_for(f'dashboard_{role}'))
     return render_template('index.html')
 
+#register route
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if is_logged_in():
-        return redirect(url_for('dashboard'))
+        role = session.get('role')
+        return redirect(url_for(f'dashboard_{role}'))
 
     if request.method == 'POST':
         required_fields = ['name', 'email', 'password', 'confirm_password', 'age', 'gender', 'role']
@@ -145,7 +149,6 @@ def register():
 
         user_table.put_item(Item=user_data)
 
-        # Email and SNS notification
         if ENABLE_EMAIL:
             send_email(email, 'Welcome to HealthCare App', f"Hello {user_data['name']}, your account was created successfully.")
 
@@ -156,10 +159,12 @@ def register():
 
     return render_template('register.html')
 
+#login route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if is_logged_in():
-        return redirect(url_for('dashboard'))
+        role = session.get('role')
+        return redirect(url_for(f'dashboard_{role}'))
 
     if request.method == 'POST':
         email = request.form.get('email', '').lower()
@@ -176,7 +181,7 @@ def login():
             session['role'] = role
             session['name'] = user.get('name', '')
             flash('Login successful!', 'success')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for(f'dashboard_{role}'))  # Fixed here
         flash('Invalid email, password, or role', 'danger')
 
     return render_template('login.html')
@@ -195,72 +200,91 @@ def dashboard():
         flash('Please log in to continue.', 'danger')
         return redirect(url_for('login'))
 
+    role = session.get('role')
+    if role == 'doctor':
+        return redirect(url_for('dashboard_doctor'))
+    elif role == 'patient':
+        return redirect(url_for('dashboard_patient'))
+    else:
+        flash('Invalid role.', 'danger')
+        return redirect(url_for('logout'))
+
+# dashboard/doctor route
+@app.route('/dashboard/doctor')
+def dashboard_doctor():
+    if not is_logged_in() or session.get('role') != 'doctor':
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('login'))
+
     email = session['email']
-    role = session['role']
 
     try:
-        if role == 'doctor':
-            appointments = []
-            try:
-                response = appointment_table.query(
-                    IndexName='DoctorEmailIndex',
-                    KeyConditionExpression="doctor_email = :email",
-                    ExpressionAttributeValues={":email": email}
-                )
-                appointments = response.get('Items', [])
-            except Exception as e:
-                logger.warning(f"GSI not working for doctor: {e}")
-                # fallback
-                scan_response = appointment_table.scan(
-                    FilterExpression="#de = :email",
-                    ExpressionAttributeNames={"#de": "doctor_email"},
-                    ExpressionAttributeValues={":email": email}
-                )
-                appointments = scan_response.get('Items', [])
+        # Fetch appointments
+        try:
+            response = appointment_table.query(
+                IndexName='DoctorEmailIndex',
+                KeyConditionExpression=Key('doctor_email').eq(email)
+            )
+            appointments = response.get('Items', [])
+        except Exception as e:
+            logger.warning(f"DoctorEmailIndex fallback scan: {e}")
+            scan_response = appointment_table.scan(
+                FilterExpression=Attr('doctor_email').eq(email)
+            )
+            appointments = scan_response.get('Items', [])
 
-            return render_template('dashboard_doctor.html', appointments=appointments)
+        # Filter by status
+        pending_appointments = [a for a in appointments if a.get('status') == 'pending']
+        completed_appointments = [a for a in appointments if a.get('status') == 'completed']
 
-        elif role == 'patient':
-            appointments = []
-            try:
-                response = appointment_table.query(
-                    IndexName='PatientEmailIndex',
-                    KeyConditionExpression="patient_email = :email",
-                    ExpressionAttributeValues={":email": email}
-                )
-                appointments = response.get('Items', [])
-            except Exception as e:
-                logger.warning(f"GSI not working for patient: {e}")
-                # fallback
-                scan_response = appointment_table.scan(
-                    FilterExpression="#pe = :email",
-                    ExpressionAttributeNames={"#pe": "patient_email"},
-                    ExpressionAttributeValues={":email": email}
-                )
-                appointments = scan_response.get('Items', [])
-
-            # Fetch list of doctors to display in booking modal
-            try:
-                doctors_response = user_table.scan(
-                    FilterExpression="#r = :doc",
-                    ExpressionAttributeNames={"#r": "role"},
-                    ExpressionAttributeValues={":doc": "doctor"}
-                )
-                doctors = doctors_response.get('Items', [])
-            except Exception as e:
-                logger.error(f"Failed to fetch doctors: {e}")
-                doctors = []
-
-            return render_template('dashboard_patient.html', appointments=appointments, doctors=doctors)
-
-        else:
-            flash('Invalid role.', 'danger')
-            return redirect(url_for('logout'))
-
+        return render_template(
+            'dashboard_doctor.html',
+            pending_appointments=pending_appointments,
+            completed_appointments=completed_appointments,
+            all_appointments=appointments,
+            pending_count=len(pending_appointments),
+            completed_count=len(completed_appointments),
+            total_count=len(appointments)
+        )
     except Exception as e:
-        logger.error(f"Dashboard error: {e}")
+        logger.error(f"Doctor dashboard error: {e}")
         flash('Something went wrong. Please try again later.', 'danger')
         return redirect(url_for('logout'))
+    
+#dashboard/patient route
+@app.route('/dashboard/patient')
+def dashboard_patient():
+    if not is_logged_in() or session.get('role') != 'patient':
+        return redirect(url_for('login'))
+
+    email = session['email']
+
+    # Get all appointments for the patient
+    response = appointment_table.scan(
+        FilterExpression=Attr('patient_email').eq(email)
+    )
+    appointments = response.get('Items', [])
+
+    # Count logic
+    pending_appointments = sum(1 for appt in appointments if appt['status'] == 'pending')
+    completed_appointments = sum(1 for appt in appointments if appt['status'] == 'completed')
+    total_appointments = len(appointments)
+
+    # Get all doctors
+    doctor_response = user_table.scan(
+        FilterExpression=Attr('role').eq('doctor')
+    )
+    doctors = doctor_response.get('Items', [])
+
+    return render_template(
+        'dashboard_patient.html',
+        appointments=appointments,
+        doctors=doctors,
+        pending_appointments=pending_appointments,
+        completed_appointments=completed_appointments,
+        total_appointments=total_appointments
+    )
+
 
 # Book Appointment Route
 @app.route('/book_appointment', methods=['GET', 'POST'])
@@ -358,33 +382,23 @@ def book_appointment():
     return render_template('book_appointment.html', doctors=doctors)
 
 #view_appointment route
-@app.route('/view_appointment/<appointment_id>', methods=['GET', 'POST'])
-def view_appointment(appointment_id):
-    if not is_logged_in():
-        flash('Please log in to continue.', 'danger')
+# Doctor View
+@app.route('/appointment/view/doctor/<appointment_id>', methods=['GET', 'POST'])
+def view_appointment_doctor(appointment_id):
+    if not is_logged_in() or session.get('role') != 'doctor':
+        flash('Unauthorized access.', 'danger')
         return redirect(url_for('login'))
 
     try:
         response = appointment_table.get_item(Key={'appointment_id': appointment_id})
         appointment = response.get('Item')
 
-        if not appointment:
-            flash('Appointment not found.', 'danger')
-            return redirect(url_for('dashboard'))
-
-        user_email = session.get('email')
-        user_role = session.get('role')
-
-        # Access control
-        if user_role == 'doctor' and appointment['doctor_email'] != user_email:
-            flash('Access denied: Not your appointment.', 'danger')
-            return redirect(url_for('dashboard'))
-        elif user_role == 'patient' and appointment['patient_email'] != user_email:
-            flash('Access denied: Not your appointment.', 'danger')
-            return redirect(url_for('dashboard'))
+        if not appointment or appointment['doctor_email'] != session['email']:
+            flash('Access denied or appointment not found.', 'danger')
+            return redirect(url_for('dashboard_doctor'))
 
         # Handle diagnosis submission
-        if request.method == 'POST' and user_role == 'doctor':
+        if request.method == 'POST':
             diagnosis = request.form.get('diagnosis', '').strip()
             treatment_plan = request.form.get('treatment_plan', '').strip()
             prescription = request.form.get('prescription', '').strip()
@@ -393,27 +407,27 @@ def view_appointment(appointment_id):
                 flash('Diagnosis and treatment plan are required.', 'danger')
                 return render_template('view_appointment_doctor.html', appointment=appointment)
 
-            # Update appointment with diagnosis
+            # Update appointment
             appointment_table.update_item(
                 Key={'appointment_id': appointment_id},
-                UpdateExpression="SET diagnosis = :diag, treatment_plan = :tp, prescription = :pres, #s = :status, updated_at = :now",
+                UpdateExpression="SET diagnosis = :d, treatment_plan = :tp, prescription = :p, #s = :status, updated_at = :now",
                 ExpressionAttributeNames={'#s': 'status'},
                 ExpressionAttributeValues={
-                    ':diag': diagnosis,
+                    ':d': diagnosis,
                     ':tp': treatment_plan,
-                    ':pres': prescription,
+                    ':p': prescription,
                     ':status': 'completed',
-                    ':now': datetime.now().isoformat()
+                    ':now': datetime.utcnow().isoformat()
                 }
             )
 
             # Send email to patient
             if ENABLE_EMAIL:
-                patient_email = appointment['patient_email']
-                patient_name = appointment.get('patient_name', 'Patient')
-                doctor_name = appointment.get('doctor_name', 'Your Doctor')
-
-                message = f"""Dear {patient_name},
+                try:
+                    patient_email = appointment.get('patient_email')
+                    patient_name = appointment.get('patient_name', 'Patient')
+                    doctor_name = appointment.get('doctor_name', 'Doctor')
+                    message = f"""Dear {patient_name},
 
 Your appointment with Dr. {doctor_name} has been completed.
 
@@ -421,19 +435,42 @@ Diagnosis: {diagnosis}
 Treatment Plan: {treatment_plan}
 
 Thank you for using MedTrack."""
-                send_email(patient_email, "Your Appointment Diagnosis", message)
+                    send_email(patient_email, "Your Appointment Diagnosis", message)
+                except Exception as e:
+                    logger.warning(f"Email error: {e}")
 
             flash('Diagnosis submitted successfully.', 'success')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('dashboard_doctor'))
 
-        # Render appropriate template
-        template = 'view_appointment_doctor.html' if user_role == 'doctor' else 'view_appointment_patient.html'
-        return render_template(template, appointment=appointment)
+        return render_template('view_appointment_doctor.html', appointment=appointment)
 
     except Exception as e:
-        logger.error(f"Error in view_appointment: {e}")
-        flash('An error occurred. Please try again.', 'danger')
-        return redirect(url_for('dashboard'))
+        logger.error(f"[view_appointment_doctor] Error: {e}")
+        flash('Something went wrong.', 'danger')
+        return redirect(url_for('dashboard_doctor'))
+
+# Patient View
+@app.route('/appointment/view/patient/<appointment_id>')
+def view_appointment_patient(appointment_id):
+    if not is_logged_in() or session.get('role') != 'patient':
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('login'))
+
+    try:
+        response = appointment_table.get_item(Key={'appointment_id': appointment_id})
+        appointment = response.get('Item')
+
+        if not appointment or appointment['patient_email'] != session['email']:
+            flash('Access denied or appointment not found.', 'danger')
+            return redirect(url_for('dashboard_patient'))
+
+        return render_template('view_appointment_patient.html', appointment=appointment)
+
+    except Exception as e:
+        logger.error(f"[view_appointment_patient] Error: {e}")
+        flash('Something went wrong.', 'danger')
+        return redirect(url_for('dashboard_patient'))
+
 
 #search_appointments route
 @app.route('/search_appointments', methods=['GET', 'POST'])
@@ -505,27 +542,32 @@ def profile():
 
     email = session.get('email')
     user = user_table.get_item(Key={'email': email}).get('Item')
+
     if not user:
         flash('User not found', 'danger')
         return redirect(url_for('logout'))
 
     if request.method == 'POST':
-        name = request.form.get('name', user.get('name'))
-        age = request.form.get('age', user.get('age'))
-        gender = request.form.get('gender', user.get('gender'))
+        username = request.form.get('username', user.get('username'))
+        email_form = request.form.get('email', user.get('email'))
+        contact = request.form.get('contact', user.get('contact'))
 
-        update_expression = "SET #name = :name, age = :age, gender = :gender"
+        update_expression = "SET #username = :username, email = :email, contact = :contact"
         expr_values = {
-            ':name': name,
-            ':age': age,
-            ':gender': gender
+            ':username': username,
+            ':email': email_form,
+            ':contact': contact
         }
-        expr_names = {'#name': 'name'}
+        expr_names = {
+            '#username': 'username'
+        }
 
-        # If doctor, update specialization
-        if user['role'] == 'doctor' and 'specialization' in request.form:
-            update_expression += ", specialization = :spec"
-            expr_values[':spec'] = request.form['specialization']
+        if user['role'] == 'doctor':
+            specialty = request.form.get('specialty', user.get('specialty', ''))
+            qualifications = request.form.get('qualifications', user.get('qualifications', ''))
+            update_expression += ", specialty = :specialty, qualifications = :qualifications"
+            expr_values[':specialty'] = specialty
+            expr_values[':qualifications'] = qualifications
 
         try:
             user_table.update_item(
@@ -534,15 +576,16 @@ def profile():
                 ExpressionAttributeValues=expr_values,
                 ExpressionAttributeNames=expr_names
             )
-            session['name'] = name
-            flash('Profile updated', 'success')
+            session['name'] = username
+            flash('Profile updated successfully!', 'success')
         except Exception as e:
-            logger.error(f"Error updating profile: {e}")
-            flash('Failed to update profile', 'danger')
+            logger.error(f"Profile update failed: {e}")
+            flash('Failed to update profile. Please try again later.', 'danger')
 
         return redirect(url_for('profile'))
 
     return render_template('profile.html', user=user)
+
 
 #health route
 @app.route('/health')
