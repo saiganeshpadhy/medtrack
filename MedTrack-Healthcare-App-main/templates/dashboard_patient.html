@@ -87,7 +87,7 @@
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="{{ url_for('view_appointment', appointment_id=appointment.appointment_id) }}" class="btn btn-sm btn-primary">View Details</a>
+                                    <a href="{{ url_for('appointment_view_patient', appointment_id=appointment.appointment_id) }}" class="btn btn-sm btn-primary">View Details</a>
                                 </td>
                             </tr>
                         {% else %}
