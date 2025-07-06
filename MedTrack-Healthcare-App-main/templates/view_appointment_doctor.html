@@ -26,7 +26,7 @@
                 <p class="mb-0">{{ appointment.symptoms }}</p>
             </div>
 
-            <form method="POST" action="{{ url_for('appointment_view_doctor', appointment_id=appointment.appointment_id) }}">
+            <form method="POST" action="{{ url_for('view_appointment_doctor', appointment_id=appointment.appointment_id) }}">
                 <div class="mb-3">
                     <label for="diagnosis" class="form-label fw-semibold">Diagnosis</label>
                     <textarea class="form-control" id="diagnosis" name="diagnosis" rows="2" placeholder="Enter your diagnosis">{{ appointment.diagnosis or '' }}</textarea>
